@@ -141,4 +141,4 @@ left join dbt_victoriashanly.mview_subsidiary_locations_structured_metadata sl
 left join dbt_victoriashanly.mview_listings_position_hierarchies_joined phj
         on cs.position_id = phj.position_id
 where true
-order by coalesce(candidatos_proporcionales,0) desc
+order by coalesce(candidatos_proporcionales,0) asc
