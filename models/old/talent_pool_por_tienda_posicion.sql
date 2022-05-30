@@ -9,8 +9,8 @@ listings as (
     select 
         listings.id, 
         listings.name 
-    from cbo.listings
-    inner join cbo.subsidiaries 
+    from {{source ('cbo','listings')}}
+    inner join {{source ('cbo','subsidiaries')}} 
         on listings.subsidiary_id = subsidiaries.id
     where listing_type in ('JOB')
     and subsidiaries.id =51
@@ -21,7 +21,7 @@ steps as (
         name, 
         type, 
         listing_id
-    from cbo.steps s
+    from {{source ('cbo','steps')}} s
     where 
         listing_id in (select id from listings)
         and s.type='INTERVIEW'
@@ -41,6 +41,21 @@ target_first_applications as
         and application_date is not null
 ),
 
+mview_listings_position_hierarchies_joined as
+(
+    select * from {{ref('stg_mview_listings_position_hierarchies_joined')}} 
+),
+
+mview_subsidiary_locations_structured_metadata as
+(
+    select * from {{ref('stg_mview_subsidiary_locations_structured_metadata')}}
+),
+
+requisitions as
+(
+    select * from {{ref('stg_requisitions')}}
+)
+,
 candidate_steps as (
     select 
         f.step_id, 
@@ -55,7 +70,7 @@ candidate_steps as (
         on f.listing_id = lcwp.listing_id and f.candidate_id = lcwp.candidate_id
     left join bi.listing_candidate_current_job_positions p
         on f.listing_id = p.listing_id and f.candidate_id = p.candidate_id
-    left join dbt_victoriashanly.mview_listings_position_hierarchies_joined phj
+    left join mview_listings_position_hierarchies_joined phj
         on coalesce(p.job_position_id) = phj.position_id and p.listing_id=phj.listing_id
     where f.listing_id in (select id from listings)
     and f.step_id in (select step_id from steps)
@@ -79,10 +94,13 @@ from candidate_steps cs
 where candidate_id in (select candidate_id from target_first_applications)
 ),
 
+-- acá debería hacer una tabla aparte porque el count distinct de candidate_id abierto por listing, no es lo mismo que no abierto -- 
+
 candidates_by_store as 
 (   
 
 select 
+    listing_id,
     subsidiary_locations_id,
     position_id,
     count(distinct candidate_id) as candidatos,
@@ -94,19 +112,21 @@ group by 1,2
 candidates_by_store_filtered as 
 (   
 
-select 
+select
+    listing_id,
     subsidiary_locations_id,
     position_id,
     count(distinct candidate_id) as candidatos_filtered,
     round(sum(proportional_candidate_filtered),1) as candidatos_proporcionales_filtered
     --array_agg(distinct candidate_id) as candidatos_array
 from proportional_candidate_filtered
-group by 1,2
+group by 1,2,3
 ),
 
 candidates_by_store_total as
 (
-select 
+select
+    cs.listing_id,
     cs.subsidiary_locations_id,
     cs.position_id,
     candidatos,
@@ -120,9 +140,10 @@ on (cs.subsidiary_locations_id = csf.subsidiary_locations_id
 and (cs.position_id = csf.position_id)
     --or (cs.position_id is null and csf.position_id is null))
 )
-
+-- acá termina la tabla y lo de abajo debería ser el select que hago en metabase, con filtros de listing para la tabla de arriba
 select
     distinct
+    cs.listing_id,
     cs.position_id,
     cs.subsidiary_locations_id,
     coalesce( subsidiary_locations.name,'Sin Tienda') as location_name,
@@ -134,11 +155,11 @@ select
     coalesce(candidatos_filtered,0) as recent_candidates,
     coalesce(candidatos_proporcionales_filtered,0) as recent_proportional_candidates
 from candidates_by_store_total cs
-left join cbo.subsidiary_locations
+left join {{source ('cbo','subsidiary_locations')}}
         on cs.subsidiary_locations_id = subsidiary_locations.id
-left join dbt_victoriashanly.mview_subsidiary_locations_structured_metadata sl
+left join mview_subsidiary_locations_structured_metadata sl
         on subsidiary_locations.id = sl.subsidiary_location_id
-left join dbt_victoriashanly.mview_listings_position_hierarchies_joined phj
+left join mview_listings_position_hierarchies_joined phj
         on cs.position_id = phj.position_id
 where true
 order by coalesce(candidatos_proporcionales,0) asc

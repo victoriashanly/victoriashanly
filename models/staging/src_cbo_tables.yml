@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: cbo
+    schema: cbo
+    tables:
+      - name: listings
+      - name: subsidiaries
+      - name: steps
+      - name: subsidiary_locations
+      - name: positions
+      - name: position_hierarchies
+      - name: listing_positions
+      - name: subsidiary_tags
+      - name: subsidiary_location_tags
+
+
